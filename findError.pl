@@ -40,6 +40,17 @@ sub ExpandCIGAR{
 	return $CigarValues;
 }
 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# ASCIIToQual function
+# Pre: ASCII value
+# Post: Base Quality
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+sub ASCIIToQual{
+	my $Input = $_[0];
+	my $Quality = ord($Input) - 33;
+	my $Value = 10 ** (-$Quality/10);
+	return $Value;
+}
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Main Code Body
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -48,7 +59,7 @@ sub ExpandCIGAR{
 my $CIGAR_Sequence = $BAMFileName . "_CIGAR_Seq.tsv";
 
 #`samtools view $BAMFile | cut -f3,4,6,10 > $CIGAR_Sequence`;
-`cut -f3,4,6,10 $BAMFile > $CIGAR_Sequence`;
+`cut -f3,4,6,10,11 $BAMFile > $CIGAR_Sequence`;
 
 open my $C_S_FH, "<", $CIGAR_Sequence or die "Can't read from '$CIGAR_Sequence'\n";
 
@@ -62,6 +73,10 @@ my $SeqOffset;
 my $RefPos;
 my $BaseSum = 0;
 my $count = 0;
+my $ExpectedErrorRate = 0;
+my $ReadErrorRate = 0;
+my $ChrPosFile = "chr_pos.tsv";
+my $CommonVariantCount = 0;
 
 while (<$C_S_FH>) {
 	chomp($_);
@@ -70,7 +85,7 @@ while (<$C_S_FH>) {
 	$I_Count = 0;
 	$Mismatch_Count = 0;
 
-	my ($Chr, $Pos, $CIGAR, $Seq) = split (/\t/, $_);
+	my ($Chr, $Pos, $CIGAR, $Seq, $Qual) = split (/\t/, $_);
 	my $CIGARChar;
 	my $SeqChar;
 	my $RefChar;
@@ -88,15 +103,16 @@ while (<$C_S_FH>) {
 	# Look at each position
 	$SeqOffset = 0;
 	$RefPos = $Pos;
-	print "$count $Seq\n";
+#	print "$count $Seq\n";
+#	print "$count ";
 	for (my $i = 0; $i < $Length; $i++) {
 		$CIGARChar = substr($CIGAR, $i, 1);
 		$SeqChar = substr($Seq, $i + $SeqOffset, 1);
 		
 		if ($CIGARChar eq "I") {
 			$I_Count += 1;
-			print GREEN, "I";
-			print RESET;
+#			print GREEN, "I";
+#			print RESET;
 		} elsif ($CIGARChar eq "M" or $CIGARChar eq "=" or $CIGARChar eq "X") {
 #			$Chr =~ s/chr//;
 			if (index(lc $Chr, "chr") != -1) {
@@ -106,18 +122,22 @@ while (<$C_S_FH>) {
 			}
 			chomp($RefChar);
 			if (lc $SeqChar ne lc $RefChar) { # Different from reference
-				$Mismatch_Count += 1;
-				print RED, (uc $RefChar);
-				print RESET;
+				if (`grep "$Chr	$RefPos" $Chr"_"$ChrPosFile | wc -l` == 0) { 
+					$Mismatch_Count += 1;
+				} else {
+					$CommonVariantCount += 1;
+				}
+#				print RED, (uc $RefChar);
+#				print RESET;
 			} else {
-				print uc $RefChar;
+#				print uc $RefChar;
 			}
 			$RefPos += 1;
 		} elsif ($CIGARChar eq "D") {
 			$SeqOffset -= 1;
 			$RefPos += 1;
 		} elsif ($CIGARChar eq "S") {
-			print "S";
+#			print "S";
 		} elsif ($CIGARChar eq "H") {
 			$SeqOffset -= 1;
 		} elsif ($CIGARChar eq "N") {
@@ -129,8 +149,17 @@ while (<$C_S_FH>) {
 		}
 	} 
 
-	print "\n\n";
-
+#	print "\n\n";
+	
+	# Find expected error rate
+	$ReadErrorRate = 0;
+	for (my $i = 0; $i < length($Qual); $i++) {
+		my $QualChar = substr($Qual, $i, 1);
+		$ReadErrorRate += ASCIIToQual($QualChar);
+		
+		
+	}
+	$ExpectedErrorRate += $ReadErrorRate;
 #	print "There are $D_Count D blocks.\n";
 #	print "There are $I_Count I's.\n";
 #	print "There are $Mismatch_Count mismatches.\n\n";
@@ -140,5 +169,9 @@ while (<$C_S_FH>) {
 }
 close $C_S_FH;
 
+$ExpectedErrorRate = $ExpectedErrorRate / $BaseSum;
+
 print "$Global_Mismatch_Count\t$Global_I_Count\t$Global_D_Count\t$BaseSum\n";
-print `echo "$Global_Mismatch_Count\t$Global_I_Count\t$Global_D_Count\t$BaseSum" | awk '{print \$1/\$4*100 " " \$2/\$4*100 " " \$3/\$4*100}'`;
+print `echo "$Global_Mismatch_Count\t$Global_I_Count\t$Global_D_Count\t$BaseSum" | awk '{print \$1/\$4 " " \$2/\$4 " " \$3/\$4}'`;
+print "Expected error rate: $ExpectedErrorRate (Expected # of errors : " . ($ExpectedErrorRate * $BaseSum) . ")\n";
+print "Common variants $CommonVariantCount\n";
