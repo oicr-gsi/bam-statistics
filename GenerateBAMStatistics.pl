@@ -1,5 +1,4 @@
 #!/usr/bin/perl
-
 # This is a script to pull some stats from a BAM file in hopes to find which sequencing technology created it
 use strict;
 use warnings;
@@ -221,11 +220,9 @@ my $SummaryOutput = $OutputDir . "/" . $BAMFileName . "-GC-summary.txt";
 my $GCOutput = $OutputDir . "/" . $BAMFileName . "-GC-output.txt";
 
 # Run tool
-# Run locally
 #`picard-tools CollectGcBiasMetrics CHART_OUTPUT=$ChartOutput SUMMARY_OUTPUT=$SummaryOutput WINDOW_SIZE=100 INPUT=$BAMFile OUTPUT=$GCOutput REFERENCE_SEQUENCE=$RefFasta`;
 
-# Run on cluster
-`java -Xmx2g -jar /oicr/local/analysis/sw/picard/picard-tools-1.90/CollectGcBiasMetrics.jar CHART_OUTPUT=$ChartOutput SUMMARY_OUTPUT=$SummaryOutput WINDOW_SIZE=100 INPUT=$BAMFile OUTPUT=$GCOutput REFERENCE_SEQUENCE=$RefFasta`;
+#`java -Xmx2g -jar /oicr/local/analysis/sw/picard/picard-tools-1.90/CollectGcBiasMetrics.jar CHART_OUTPUT=$ChartOutput SUMMARY_OUTPUT=$SummaryOutput WINDOW_SIZE=100 INPUT=$BAMFile OUTPUT=$GCOutput REFERENCE_SEQUENCE=$RefFasta`;
 
 # Run Picard CollectInsertSizeMetrics -----------------------------------------------------------
 print "Running Picard CollectInsertSizeMetrics\n";
@@ -235,11 +232,9 @@ my $InsertHistogramOutput = $OutputDir . "/" . $BAMFileName . "-Insert-histogram
 my $InsertOutput = $OutputDir . "/" . $BAMFileName . "-Insert-output.txt";
 
 # Run tool
-# Run locally
 #`picard-tools CollectInsertSizeMetrics HISTOGRAM_FILE=$InsertHistogramOutput INPUT=$BAMFile OUTPUT=$InsertOutput`;
 
-# Run on cluster
-`java -Xmx2g -jar /oicr/local/analysis/sw/picard/picard-tools-1.90/CollectInsertSizeMetrics.jar HISTOGRAM_FILE=$InsertHistogramOutput INPUT=$BAMFile OUTPUT=$InsertOutput`;
+#`java -Xmx2g -jar /oicr/local/analysis/sw/picard/picard-tools-1.90/CollectInsertSizeMetrics.jar HISTOGRAM_FILE=$InsertHistogramOutput INPUT=$BAMFile OUTPUT=$InsertOutput`;
 
 # Run FastQC ------------------------------------------------------------------------------------
 print "Running FastQC\n";
@@ -249,7 +244,7 @@ my $FastQCOutputZip = $OutputDir . "/" . $BAMFileName . "_fastqc.zip";
 my $FastQCFile = $OutputDir . "/" . $BAMFileName . "_fastqc/fastqc_data.txt";
 
 # Run tool
-`/oicr/local/analysis/sw/fastqc/0.9.1/fastqc -o $OutputDir $BAMFile`;
+#`/oicr/local/analysis/sw/fastqc/0.9.1/fastqc -o $OutputDir $BAMFile`;
 #`rm $FastQCOutputZip`;
 
 # Tools completed
@@ -283,61 +278,41 @@ my $ReadLengthStatistics = $OutputDir . "/" . $BAMFileName . "-read-length-stati
 my $ReadLengthGraph = $OutputDir . "/" . $BAMFileName . "-read-length-graph.png";
 my $ReadLengthAvg = 0;
 my $NumOfReads = 0;
+my $FirstQuartilePos = 0;
+my $MedianPos = 0;
+my $ThirdQuartilePos = 0; 
 
 # Generate statistics
-`/oicr/local/analysis/sw//samtools/samtools-0.1.18/samtools view $BAMFile | awk '{if (\$10 != "") print length(\$10);}' | sort -n > $ReadLengthOutput`;
+my $ReadLengthString = `samtools view $BAMFile | awk 'BEGIN{sum=0;count=0;} {if (\$10 != "") {len=length(\$10);sum+=len;count+=1;}} END{print sum/count " " count}'`;
+($ReadLengthAvg,$NumOfReads)= split(/ /, $ReadLengthString);
+$MedianPos = getMedianLoc($NumOfReads);
 
-open my $READ_LENGTH_FH, "<", $ReadLengthOutput or die "Cannot open '$ReadLengthOutput'\n";
-
-while (<$READ_LENGTH_FH>) {
-	chomp($_);
-	if ($_ ne "") {
-		$NumOfReads += 1;
-		$ReadLengthAvg += $_;
-	}
+if ($MedianPos%2==0) {
+	$FirstQuartilePos = getMedianLoc($MedianPos - 1);
+	$ThirdQuartilePos = $MedianPos + $FirstQuartilePos;
+} else {
+	$FirstQuartilePos = getMedianLoc($MedianPos - 0.5 - 1);
+	$ThirdQuartilePos = $MedianPos + $FirstQuartilePos + 0.5;
 }
 
-$ReadLengthAvg = $ReadLengthAvg / $NumOfReads;
-print "The read length average is : $ReadLengthAvg\n";
-seek $READ_LENGTH_FH, 0, 0;
 
-open my $READ_LENGTH_NORMALIZED_FH, '>', $NormReadLengthOutput or die "Cannot write to '$NormReadLengthOutput'\n";
+`samtools view $BAMFile | awk '{if (\$10 != "") print length(\$10);}' | sort -n | awk 'BEGIN{mean=$ReadLengthAvg;Lines=$NumOfReads;stddev=0;line=0;min=0;max=0;median=$MedianPos;fq=$FirstQuartilePos;tq=$ThirdQuartilePos;medianVal=0;fqVal=0;tqVal=0;} {line+=1; stddev+=(\$0-mean)**2;if (line==1) {min=\$0;max=\$0}; if (line==Lines) {max=\$0}; if (line==median) {medianVal=\$0}; if (median-0.5==line) {medianVal+=\$0} else if (median+0.5==line) {medianVal+=\$0; medianVal/=2} if (line==fq) {fqVal=\$0}; if (fq-0.5==line) {fqVal+=\$0} else if (fq+0.5==line) {fqVal+=\$0; fqVal/=2} if (line==tq) {tqVal=\$0}; if (tq-0.5==line) {tqVal+=\$0} else if (tq+0.5==line) {tqVal+=\$0; tqVal/=2}} END {print "Min:"min; print "FirstQuartile:"fqVal; print "Median:"medianVal; print "Mean:"mean; print "ThirdQuartile:"tqVal; print "Max:"max; print "StdDev:"(stddev/Lines)**0.5 }' > $ReadLengthStatistics`;
 
-while (<$READ_LENGTH_FH>) {
-        chomp($_);
-	my $Avg;
-
-        if ($_ ne "") {
-		$Avg = $_ / $ReadLengthAvg;
-		print $READ_LENGTH_NORMALIZED_FH "$Avg\n";
-        }
-	
-	
-}
-
-close ($READ_LENGTH_NORMALIZED_FH);
-
-`mv $NormReadLengthOutput $ReadLengthOutput`;
-
-print "Generating data\n";
-DataSummary($ReadLengthOutput, $ReadLengthStatistics);
-
-# Parse output from R and store to output CSV
+# Parse output and store to output CSV
 open my $READ_LENGTH_STATS_FH, "<", $ReadLengthStatistics or die "Couldn't open '$ReadLengthStatistics'\n";
 
 while (<$READ_LENGTH_STATS_FH>) {
 	chomp($_);
-
+	my $NormalizedValue;
 	$_ =~ s/\s//g;
 
 	$_ =~ s/^.*://g;
-
-        print $OUTPUT_FH "$_,";
+	$NormalizedValue = $_/$ReadLengthAvg;
+        print $OUTPUT_FH "$NormalizedValue,";
         $LineCount += 1;
 
 }
-
-close $READ_LENGTH_FH;
+close $READ_LENGTH_STATS_FH;
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Collect Insert Size stats
