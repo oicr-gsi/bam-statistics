@@ -29,12 +29,12 @@ my $BAMFileName = fileparse($BAMFile, ".bam");
 my $OutputDir = $BAMFileName . "-coverage_and_base_quality";
 
 # Remove old directory if it exists
-#if (-e $OutputDir) {
-#        remove_tree($OutputDir);
-#}
+if (-e $OutputDir) {
+        remove_tree($OutputDir);
+}
 
 # Make output directory
-#make_path($OutputDir) or die "$@";
+make_path($OutputDir) or die "$@";
 
 # BEDTools genomecov output file
 my $BEDToolsOutput = "$OutputDir/BEDToolsGenomeCov.tsv";
