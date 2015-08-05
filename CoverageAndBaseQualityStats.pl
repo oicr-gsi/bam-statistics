@@ -9,6 +9,7 @@ use File::Path qw(make_path remove_tree);
 ###################################################################################################
 # CoverageAndBaseQualityStats.pl
 # This script pulls out coverage and quality statistics.
+# Unfortunately it only works with WG as it looks at every position in the reference genome
 # 
 # Uses:
 # SAMTools
@@ -47,6 +48,10 @@ my $AvgBQ = 0;
 my $AvgCov = 0;
 
 ####### Functions ###############################################################################
+
+# Calls BEDTools GenomeCov Tool
+# Pre: BAM file and Fasta reference file
+# Post: Genome Coverage statistics
 sub bedTools {
 	`bedtools genomecov -ibam $BAMFile -g $FAFile > $BEDToolsOutput`;
 	`awk '{if (\$1 == "genome"){print \$0}}' $BEDToolsOutput > $GenomeCov`;
@@ -54,11 +59,14 @@ sub bedTools {
 	`rm $BEDToolsOutput`;
 }
 
+# Determines the percent of bases at each possible quality value and stores to file
+# Pre: BAM file
+# Post: Base Quality Distribution file
 sub baseQuality {
 	my $Quality = $ARGV[0];
 	my @Qualities = (0)x94;
 	my $TotalBases = 0;
-	my $Count = 93;
+	my $Count = 93; # Max Value of BQ is 94 (or 93, double check this)
 	my $Perc = 0;
 	$AvgBQ = 0;	
 
@@ -93,6 +101,9 @@ sub baseQuality {
 
 }
 
+# Determines percent of bases larger than or equal to the given coverage
+# Pre: Genome Coverage file from BEDTools GenomeCov, Coverage Value
+# Post: Percent of Bases >= Given Coverage
 sub percentBasesCovGTE {
 	my $GTE = $_[0];
 	my $TotalBases = `head -1 $GenomeCov | cut -f4`;
@@ -100,13 +111,9 @@ sub percentBasesCovGTE {
 	return `awk 'BEGIN { sum=0 } {if(\$2 >= $GTE) {sum+=\$3/\$4;}} END {print sum*100}' $GenomeCov`;
 }
 
-sub percentBasesCovLTE {
-	my $LTE = $_[0];
-	my $TotalBases = `head -1 $GenomeCov | cut -f4`;
-
-        return `awk 'BEGIN { sum=0 } {if(\$2 <= $LTE) {sum+=\$3/\$4;}} END {print sum*100}' $GenomeCov`;
-}
-
+# Determines percent of bases with Coverage larger than a preset set of values
+# Pre: None
+# Post: Prints percents to screen
 sub analyzeBedTools {
 	print "%Cov>0 : " . percentBasesCovGTE(1);	
 	print "%Cov>=8 : " . percentBasesCovGTE(8);
@@ -114,34 +121,34 @@ sub analyzeBedTools {
 	print "%Cov>=50 : " . percentBasesCovGTE(50);
 }
 
+# Determines percent of bases larger than or equal to the given base quality
+# Pre: Base Quality Report from baseQuality(), Base Quality Value
+# Post: Percent of Bases >= Given Base Quality
 sub percentBaseQualityGTE {
 	my $GTE = $_[0];
 	return `awk '{if(\$1 == $GTE) {print \$2}}' $BaseQualityReport`;
 }
 
-sub percentBaseQualityLTE {
-	my $LTE = $_[0];
-	return `awk '{if(\$1 == $LTE) {print \$2}}' $BaseQualityReport`;
-}
-
+# Determines percent of bases with Base Quality larger than a preset set of values
+# Pre: None
+# Post: Prints percents to screen
 sub analyzeBaseQuality {
 	print "%BC>=0 : " . percentBaseQualityGTE(0);
 	print "%BC>=20 : " . percentBaseQualityGTE(20);
 	print "%BC>=30 : " . percentBaseQualityGTE(30);
-	print "%BC>=" . int($AvgBQ) . " : " . percentBaseQualityGTE(int($AvgBQ));
 }
 
 ######## Call BEDTools genomecov ################################################################
 print "Collecting Coverage Statistics...\n";
 bedTools();
 
-####### Analyze BEDTools genomecov data ########################################################
-print "Analyzing Coverage Statistics...\n";
-analyzeBedTools();
-
 ####### Call Base Quality tool #################################################################
 print "Collecting Base Quality Statistics...\n";
 baseQuality();
+
+####### Analyze BEDTools genomecov data ########################################################
+print "Analyzing Coverage Statistics...\n";
+analyzeBedTools();
 
 ####### Analyze Base Quality data #################################################################
 print "Analyzing Base Quality Statistics...\n";
