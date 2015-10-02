@@ -6,32 +6,82 @@ use Cwd 'abs_path';
 use File::Basename;
 use File::Path qw(make_path remove_tree);
 use POSIX qw/ceil/;
+use Getopt::Long;
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # Set up the script
 #
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-# Set up location of BAM file and grab the filename
-my $BAMFile = $ARGV[0];    # File path of BAM file
+# Set up output directory
+my $OutputDir; 
+
+# Get BAM file name
+my $BAMFile;
+my $RefFasta;
+my $help;
+my $samtools="samtools";
+
+sub usage {
+    return
+"Usage: perl GenerateBAMStatistics.pl --bam <path to bam file> --ref <path to reference file> [--help for more options] \n\n";
+}
+
+sub options {
+    print "Defaults are in [square brackets]\n";
+    print "\tref            path to genome reference fasta\n";
+    print "\tbam            path to BAM file\n";
+    print "\tsamtools       path to samtools executable. [samtools]\n";
+    print "\toutput-dir     name or path of output directory\n";
+    print "\thelp           print this message\n";
+}
+
+my $result = GetOptions(
+    "bam=s"        => \$BAMFile,
+    "ref=s"        => \$RefFasta,
+    "samtools=s"   => \$samtools,
+    "output-dir=s" => \$OutputDir,
+    "help"         => \$help
+) or die( "Error in command line arguments\n", usage() );
+
+if ( defined $help ) {
+    print usage();
+    options();
+    exit;
+}
+
+if ( not defined $BAMFile ) {
+    print "BAM file must be specified\n";
+    die(usage);
+}
+if ( not defined $RefFasta ) {
+    print "Reference file must be specified\n";
+    die usage();
+}
+
+my $exitcode = system("$samtools -h >/dev/null 2>&1");
+if ( $exitcode == 127 ) {
+    die("samtools is not found at '$samtools'");
+}
+
+chomp($RefFasta);
 chomp($BAMFile);
 my $BAMFileName = fileparse( $BAMFile, ".bam" );
 
-# Set up reference fasta
-my $RefFasta = $ARGV[1];
-chomp($RefFasta);
 
-# Set up output directory
-my $OutputDir = "$BAMFileName-stats";
+if (not defined $OutputDir) {
+$OutputDir = "$BAMFileName-stats";
+}
+# Set up output file
+my $OutputFile = $OutputDir . "/" . $BAMFileName . ".csv";
+
+
 
 if ( -e $OutputDir ) {
     remove_tree($OutputDir);
 }
 
 make_path($OutputDir) or die "$@";
-
-# Set up output file
-my $OutputFile = $OutputDir . "/" . $BAMFileName . ".csv";
 
 # Print basic script information
 print "*****GenerateBAMStatistics.pl*****\n";
@@ -304,7 +354,7 @@ my $ThirdQuartilePos = 0;
 
 # Generate statistics
 my $ReadLengthString =
-`samtools view $BAMFile | awk 'BEGIN{sum=0;count=0;} {if (\$10 != "") {len=length(\$10);sum+=len;count+=1;}} END{print sum/count " " count}'`;
+`$samtools view $BAMFile | awk 'BEGIN{sum=0;count=0;} {if (\$10 != "") {len=length(\$10);sum+=len;count+=1;}} END{print sum/count " " count}'`;
 ( $ReadLengthAvg, $NumOfReads ) = split( / /, $ReadLengthString );
 $MedianPos = getMedianLoc($NumOfReads);
 
@@ -317,7 +367,7 @@ else {
     $ThirdQuartilePos = $MedianPos + $FirstQuartilePos + 0.5;
 }
 
-`samtools view $BAMFile | awk '{if (\$10 != "") print length(\$10);}' | sort -n | awk 'BEGIN{mean=$ReadLengthAvg;Lines=$NumOfReads;stddev=0;line=0;min=0;max=0;median=$MedianPos;fq=$FirstQuartilePos;tq=$ThirdQuartilePos;medianVal=0;fqVal=0;tqVal=0;} {line+=1; stddev+=(\$0-mean)**2;if (line==1) {min=\$0;max=\$0}; if (line==Lines) {max=\$0}; if (line==median) {medianVal=\$0}; if (median-0.5==line) {medianVal+=\$0} else if (median+0.5==line) {medianVal+=\$0; medianVal/=2} if (line==fq) {fqVal=\$0}; if (fq-0.5==line) {fqVal+=\$0} else if (fq+0.5==line) {fqVal+=\$0; fqVal/=2} if (line==tq) {tqVal=\$0}; if (tq-0.5==line) {tqVal+=\$0} else if (tq+0.5==line) {tqVal+=\$0; tqVal/=2}} END {print "Min:"min; print "FirstQuartile:"fqVal; print "Median:"medianVal; print "Mean:"mean; print "ThirdQuartile:"tqVal; print "Max:"max; print "StdDev:"(stddev/Lines)**0.5 }' > $ReadLengthStatistics`;
+`$samtools view $BAMFile | awk '{if (\$10 != "") print length(\$10);}' | sort -n | awk 'BEGIN{mean=$ReadLengthAvg;Lines=$NumOfReads;stddev=0;line=0;min=0;max=0;median=$MedianPos;fq=$FirstQuartilePos;tq=$ThirdQuartilePos;medianVal=0;fqVal=0;tqVal=0;} {line+=1; stddev+=(\$0-mean)**2;if (line==1) {min=\$0;max=\$0}; if (line==Lines) {max=\$0}; if (line==median) {medianVal=\$0}; if (median-0.5==line) {medianVal+=\$0} else if (median+0.5==line) {medianVal+=\$0; medianVal/=2} if (line==fq) {fqVal=\$0}; if (fq-0.5==line) {fqVal+=\$0} else if (fq+0.5==line) {fqVal+=\$0; fqVal/=2} if (line==tq) {tqVal=\$0}; if (tq-0.5==line) {tqVal+=\$0} else if (tq+0.5==line) {tqVal+=\$0; tqVal/=2}} END {print "Min:"min; print "FirstQuartile:"fqVal; print "Median:"medianVal; print "Mean:"mean; print "ThirdQuartile:"tqVal; print "Max:"max; print "StdDev:"(stddev/Lines)**0.5 }' > $ReadLengthStatistics`;
 
 # Parse output and store to output CSV
 open my $READ_LENGTH_STATS_FH, "<", $ReadLengthStatistics

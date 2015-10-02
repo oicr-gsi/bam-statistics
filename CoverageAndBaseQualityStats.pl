@@ -5,6 +5,7 @@ use warnings;
 use Cwd 'abs_path';
 use File::Basename;
 use File::Path qw(make_path remove_tree);
+use Getopt::Long;
 
 ###################################################################################################
 # CoverageAndBaseQualityStats.pl
@@ -16,17 +17,77 @@ use File::Path qw(make_path remove_tree);
 # BEDTools
 
 ########## Set up Paramaters ######################################################################
+
 # File path of BAM file
-my $BAMFile = $ARGV[0];
-$BAMFile = abs_path($BAMFile);
+my $BAMFile;
 
 # File path of Fasta file
-my $FAFile = $ARGV[1];
-$FAFile = abs_path($FAFile);
+my $FAFile;
+
+my $samtools = "samtools";
+my $bedtools = "bedtools";
+my $OutputDir;
+my $help;
+
+sub usage {
+    return
+"Usage: perl CoverageAndBaseQualityStats.pl --bam <path to bam file> --ref <path to reference file> [--help for more options] \n\n";
+}
+
+sub options {
+    print "Defaults are in [square brackets]\n";
+    print "\tref            path to genome reference fasta\n";
+    print "\tbam            path to BAM file\n";
+    print "\tsamtools       path to samtools executable. [samtools]\n";
+    print "\tbedtools       path to bedtools executable. [bedtools]\n";
+    print "\toutput-dir     name or path of output directory\n";
+    print "\thelp           print this message\n";
+}
+
+my $result = GetOptions(
+    "bam=s"        => \$BAMFile,
+    "ref=s"        => \$FAFile,
+    "samtools=s"   => \$samtools,
+    "bedtools=s"   => \$bedtools,
+    "output-dir=s" => \$OutputDir,
+    "help"         => \$help
+) or die( "Error in command line arguments\n", usage() );
+
+if ( defined $help ) {
+    print usage();
+    options();
+    exit;
+}
+
+if ( not defined $BAMFile ) {
+    print "BAM file must be specified\n";
+    die(usage);
+}
+if ( not defined $FAFile ) {
+    print "Reference file must be specified\n";
+    die usage();
+}
+
+$BAMFile = abs_path($BAMFile);
+$FAFile  = abs_path($FAFile);
+
+my $exitcode = system("$samtools -h >/dev/null 2>&1");
+if ( $exitcode == 127 ) {
+    die("samtools is not found at '$samtools'");
+}
+
+$exitcode = system("$bedtools -h >/dev/null 2>&1");
+if ( $exitcode == 127 ) {
+    die("bedtools is not found at '$bedtools'");
+}
+
+####################################################################################################
 
 ######### Set up output directory and files #######################################################
 my $BAMFileName = fileparse( $BAMFile, ".bam" );
-my $OutputDir = $BAMFileName . "-coverage_and_base_quality";
+if ( not defined $OutputDir ) {
+    $OutputDir = $BAMFileName . "-coverage_and_base_quality";
+}
 
 # Remove old directory if it exists
 if ( -e $OutputDir ) {
@@ -52,7 +113,7 @@ my $AvgCov = 0;
 # Pre: BAM file and Fasta reference file
 # Post: Genome Coverage statistics
 sub bedTools {
-    `bedtools genomecov -ibam $BAMFile -g $FAFile > $BEDToolsOutput`;
+    `$bedtools genomecov -ibam $BAMFile -g $FAFile > $BEDToolsOutput`;
     `awk '{if (\$1 == "genome"){print \$0}}' $BEDToolsOutput > $GenomeCov`;
     `cat $GenomeCov`;
     `rm $BEDToolsOutput`;
@@ -72,7 +133,7 @@ sub baseQuality {
     open my $BASE_QUALITY_FH, '>', $BaseQualityReport
       or die "Can't write to '$BaseQualityReport'\n";
 
-    foreach my $m (`samtools view $BAMFile | cut -f11`) {
+    foreach my $m (`$samtools view $BAMFile | cut -f11`) {
         chomp($m);
 
         foreach ( split //, $m ) {

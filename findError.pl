@@ -4,16 +4,67 @@ use strict;
 use warnings;
 use File::Basename;
 use Term::ANSIColor qw(:constants);
+use Getopt::Long;
 
 # Get BAM file name
-my $BAMFile = $ARGV[0];
+my $BAMFile;
+my $FastaFile;
+my $OutputFile;
+my $help;
+my $samtools="samtools";
+
+sub usage {
+    return
+"Usage: perl findErrors.pl --bam <path to bam file> --ref <path to reference file> [--help for more options] \n\n";
+}
+
+sub options {
+    print "Defaults are in [square brackets]\n";
+    print "\tref            path to genome reference fasta\n";
+    print "\tbam            path to BAM file\n";
+    print "\tsamtools       path to samtools executable. [samtools]\n";
+    print "\toutput     name or path of output file\n";
+    print "\thelp           print this message\n";
+}
+
+my $result = GetOptions(
+    "bam=s"        => \$BAMFile,
+    "ref=s"        => \$FastaFile,
+    "samtools=s"   => \$samtools,
+    "output=s" => \$OutputFile,
+    "help"         => \$help
+) or die( "Error in command line arguments\n", usage() );
+
+if ( defined $help ) {
+    print usage();
+    options();
+    exit;
+}
+
+if ( not defined $BAMFile ) {
+    print "BAM file must be specified\n";
+    die(usage);
+}
+if ( not defined $FastaFile ) {
+    print "Reference file must be specified\n";
+    die usage();
+}
+
+my $exitcode = system("$samtools -h >/dev/null 2>&1");
+if ( $exitcode == 127 ) {
+    die("samtools is not found at '$samtools'");
+}
+
+chomp($FastaFile);
 chomp($BAMFile);
 my $BAMFileName = fileparse( $BAMFile, ".bam" );
 
-my $FastaFile = $ARGV[1];
-chomp($FastaFile);
+if (not defined $OutputFile) {
+$OutputFile = "$BAMFile.tsv";
 
-my $OutputFile = "$BAMFile.tsv";
+}
+
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # ExpandCIGAR function
@@ -59,7 +110,7 @@ sub ASCIIToQual {
 # Grab columns 5 and 10 from BAM file (cigar and sequence)
 my $CIGAR_Sequence = $BAMFileName . "_CIGAR_Seq.tsv";
 
-#`samtools view $BAMFile | cut -f3,4,6,10 > $CIGAR_Sequence`;
+#`$samtools view $BAMFile | cut -f3,4,6,10 > $CIGAR_Sequence`;
 `cut -f3,4,6,10,11 $BAMFile > $CIGAR_Sequence`;
 
 open my $C_S_FH, "<", $CIGAR_Sequence
@@ -123,11 +174,11 @@ while (<$C_S_FH>) {
             #			$Chr =~ s/chr//;
             if ( index( lc $Chr, "chr" ) != -1 ) {
                 $RefChar =
-                  `samtools faidx $FastaFile "$Chr:$RefPos-$RefPos" | tail -1`;
+                  `$samtools faidx $FastaFile "$Chr:$RefPos-$RefPos" | tail -1`;
             }
             else {
                 $RefChar =
-`samtools faidx $FastaFile "chr$Chr:$RefPos-$RefPos" | tail -1`;
+`$samtools faidx $FastaFile "chr$Chr:$RefPos-$RefPos" | tail -1`;
             }
             chomp($RefChar);
             if ( lc $SeqChar ne lc $RefChar ) {    # Different from reference
