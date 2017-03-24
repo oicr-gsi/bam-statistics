@@ -92,8 +92,14 @@ awk '
   }' combined_cov.txt > cov.txt 
 
 
+# Change file format from tsv to csv
+sed -i 's/\t/,/g' cov.txt 
+
+# [optional] Add Approriate Header to CSV file
+echo 'distance,Dataset_1,Dataset_2,Dataset_3,Dataset_4,Dataset_5,Dataset_6' > header.csv 
+cat header.csv cov.txt > cov.csv
 
 ##Clean up
-rm upstream_temp* downstream_temp* combined_cov.txt 
+rm upstream_temp* downstream_temp* combined_cov.txt header.csv cov.txt 
 
 ## Coverage by distance can be plotted using R
