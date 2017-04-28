@@ -222,7 +222,7 @@ print "Cleaning up\n";
 `rm $BAMFileName-Upstream.txt $BAMFileName-Downstream.txt`;
 `rm $BAMFileName-Complete.txt`;
 
-## $BAMFileName.csv can be used to plot a curve (scatter plot) in R
+## $BAMFileName.csv can be used to generate scatter plot in R
 #### Plotting the curve in R workspace ####
 
 #`R "png('Horizon_GM24143_Ly_C_PE_301_EX_chr21.png'); 
